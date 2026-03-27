@@ -1,151 +1,144 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hand Cricket Multiplayer</title>
-    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
-    <style>
-        :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-        .game-card { width: 92%; max-width: 400px; background: var(--card); padding: 20px; border-radius: 24px; text-align: center; box-shadow: 0 15px 40px rgba(0,0,0,0.6); }
-        .status-tag { padding: 6px 16px; border-radius: 20px; font-size: 0.8rem; font-weight: 800; margin-bottom: 10px; display: inline-block; background: #334155; text-transform: uppercase; }
-        .score { font-size: 3.5rem; font-weight: 900; margin: 5px 0; color: var(--accent); }
-        .hands { display: flex; justify-content: space-around; background: #0f172a; padding: 15px; border-radius: 18px; margin: 15px 0; border: 1px solid #334155; }
-        .hand-val { font-size: 3rem; display: block; margin-top: 5px; }
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-        .num-btn { background: var(--accent); border: none; padding: 18px; font-size: 1.4rem; font-weight: bold; border-radius: 14px; color: #0f172a; }
-        .num-btn:active { transform: scale(0.9); background: #7dd3fc; }
-        .setup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
-        input { padding: 15px; border-radius: 12px; border: 2px solid #334155; margin-bottom: 12px; width: 80%; background: #1e293b; color: white; font-size: 1rem; text-align: center; }
-        #msg { margin: 15px 0; font-weight: bold; color: #94a3b8; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hand Cricket Multiplayer</title>
+<script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+
+<style>
+:root { --bg:#0f172a; --card:#1e293b; --accent:#38bdf8; --text:#f8fafc;}
+body { background:var(--bg); color:var(--text); font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh;}
+.game-card { width:90%; max-width:400px; background:var(--card); padding:20px; border-radius:20px; text-align:center;}
+.score { font-size:3rem; color:var(--accent);}
+.grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+.num-btn { padding:15px; font-size:1.2rem; border:none; border-radius:10px; background:var(--accent);}
+.setup-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg); display:flex; flex-direction:column; justify-content:center; align-items:center;}
+input { padding:10px; margin:5px;}
+</style>
 </head>
+
 <body>
 
 <div id="setup" class="setup-overlay">
-    <h2 style="color: var(--accent)">MULTIPLAYER SETUP</h2>
-    <input type="text" id="p-name" placeholder="Your Name">
-    <input type="text" id="r-name" placeholder="Room Name">
-    <button class="num-btn" style="width: 85%;" onclick="joinGame()">START MATCH</button>
+<h2>Join Game</h2>
+<input id="p-name" placeholder="Your Name">
+<input id="r-name" placeholder="Room Name">
+<button onclick="joinGame()">Start</button>
 </div>
 
 <div class="game-card">
-    <div id="role-tag" class="status-tag">CONNECTING...</div>
-    <div class="score" id="score-ui">0</div>
-    <div id="target-ui" style="color:#64748b; font-size:0.8rem; height: 15px;"></div>
+<div id="role">Connecting...</div>
+<div class="score" id="score">0</div>
+<div id="target"></div>
 
-    <div class="hands">
-        <div><span id="label-me" style="font-size:0.7rem; color:#64748b;">YOU</span><span id="my-hand" class="hand-val">❓</span></div>
-        <div><span id="label-opp" style="font-size:0.7rem; color:#64748b;">OPPONENT</span><span id="opp-hand" class="hand-val">❓</span></div>
-    </div>
+<div>
+<span id="me">❓</span> vs <span id="opp">❓</span>
+</div>
 
-    <div class="grid" id="btn-grid">
-        <button class="num-btn" onclick="sendMove(1)">1</button>
-        <button class="num-btn" onclick="sendMove(2)">2</button>
-        <button class="num-btn" onclick="sendMove(3)">3</button>
-        <button class="num-btn" onclick="sendMove(4)">4</button>
-        <button class="num-btn" onclick="sendMove(5)">5</button>
-        <button class="num-btn" onclick="sendMove(6)">6</button>
-    </div>
-    <div id="msg">Join a room to play!</div>
+<div class="grid">
+<button onclick="sendMove(1)">1</button>
+<button onclick="sendMove(2)">2</button>
+<button onclick="sendMove(3)">3</button>
+<button onclick="sendMove(4)">4</button>
+<button onclick="sendMove(5)">5</button>
+<button onclick="sendMove(6)">6</button>
+</div>
+
 </div>
 
 <script>
-    // ************************************************************
-    // LINE 104: PASTE YOUR ABLY KEY INSIDE THE QUOTES BELOW
-    const ABLY_KEY = 'YNYqpA.Qpfktw:WObb_i9bgc_cxO0Kyi3fq8Yts4DvxtOb-8qQXw6ciy4'; 
-    // ************************************************************
+const ABLY_KEY = "YNYqpA.Qpfktw:WObb_i9bgc_cxO0Kyi3fq8Yts4DvxtOb-8qQXw6ciy4";
 
-    let ably, channel, myId, myName;
-    let myScore = 0, target = 0, isSecondInnings = false;
-    let myMove = null, oppMove = null, amIBatting = false;
-    const emojiMap = { 1:"☝️", 2:"✌️", 3:"🤟", 4:"🖖", 5:"✋", 6:"✊" };
+let ably, channel, myId;
+let myMove=null, oppMove=null;
+let score=0, target=0;
+let batting=false, second=false;
 
-    function joinGame() 
-        myName = document.getElementById("p-name").value || "Player";
-        const room = document.getElementById("r-name").value;
-        if (!room) return alert("Enter a room name!");
+function joinGame() {
+    const name = document.getElementById("p-name").value || "Player";
+    const room = document.getElementById("r-name").value;
 
-        ably = new Ably.Realtime(ABLY_KEY);
-        myId = Math.random().toString(36).substring(7);
-        channel = ably.channels.get(room);
+    if(!room) return alert("Enter room");
 
-        channel.subscribe('game-data', (msg) => {
-            if (msg.data.type === 'move' && msg.data.sender !== myId) {
-                oppMove = msg.data.val;
-                checkResult();
-            }
-            if ((msg.data.type === 'join' || msg.data.type === 'greet') && msg.data.sender !== myId) {
-                document.getElementById("label-opp").innerText = msg.data.name.toUpperCase();
-                amIBatting = myId < msg.data.sender;
-                if(msg.data.type === 'join') channel.publish('game-data', { type: 'greet', name: myName, sender: myId });
-                updateDisplay();
-            }
-        });
+    ably = new Ably.Realtime(ABLY_KEY);
+    myId = Math.random().toString(36).substr(2,5);
+    channel = ably.channels.get(room);
 
-        channel.publish('game-data', { type: 'join', sender: myId, name: myName });
-        document.getElementById("setup").style.display = "none";
-        document.getElementById("label-me").innerText = myName.toUpperCase();
-    }
+    channel.subscribe("msg", msg => {
+        const data = msg.data;
 
-    function updateDisplay() {
-        const tag = document.getElementById("role-tag");
-        tag.innerText = amIBatting ? "BATTING" : "BOWLING";
-        tag.style.color = amIBatting ? "#4ade80" : "#f43f5e";
-        document.getElementById("msg").innerText = "Match Started!";
-    }
+        if(data.type==="join" && data.id!==myId){
+            batting = myId < data.id;
+            updateRole();
+            channel.publish("msg",{type:"ack", id:myId});
+        }
 
-    function sendMove(val) {
-        if (myMove !== null) return;
-        myMove = val;
-        document.getElementById("my-hand").innerText = "✅";
-        document.getElementById("btn-grid").style.opacity = "0.3";
-        channel.publish('game-data', { type: 'move', val: val, sender: myId });
-        checkResult();
-    }
+        if(data.type==="move" && data.id!==myId){
+            oppMove = data.val;
+            check();
+        }
+    });
 
-    function checkResult() {
-        if (myMove !== null && oppMove !== null) {
-            document.getElementById("my-hand").innerText = emojiMap[myMove];
-            document.getElementById("opp-hand").innerText = emojiMap[oppMove];
+    channel.publish("msg",{type:"join", id:myId});
 
-            if (myMove === oppMove) {
-                handleOut();
+    document.getElementById("setup").style.display="none";
+}
+
+function updateRole(){
+    document.getElementById("role").innerText = batting ? "Batting" : "Bowling";
+}
+
+function sendMove(val){
+    if(myMove!==null) return;
+
+    myMove = val;
+    document.getElementById("me").innerText = val;
+
+    channel.publish("msg",{type:"move", val:val, id:myId});
+    check();
+}
+
+function check(){
+    if(myMove!==null && oppMove!==null){
+
+        document.getElementById("opp").innerText = oppMove;
+
+        if(myMove===oppMove){
+            if(!second){
+                second=true;
+                target = score+1;
+                score=0;
+                batting = !batting;
+                document.getElementById("target").innerText="Target: "+target;
+                updateRole();
+                alert("OUT! Switch innings");
             } else {
-                myScore += (amIBatting ? myMove : oppMove);
-                document.getElementById("score-ui").innerText = myScore;
-                if (isSecondInnings && myScore >= target) endGame(amIBatting);
+                endGame(!batting);
             }
-
-            setTimeout(() => {
-                myMove = null; oppMove = null;
-                document.getElementById("my-hand").innerText = "❓";
-                document.getElementById("opp-hand").innerText = "❓";
-                document.getElementById("btn-grid").style.opacity = "1";
-            }, 1200);
-        }
-    }
-
-    function handleOut() {
-        if (!isSecondInnings) {
-            target = myScore + 1;
-            isSecondInnings = true;
-            amIBatting = !amIBatting;
-            myScore = 0;
-            document.getElementById("score-ui").innerText = "0";
-            document.getElementById("target-ui").innerText = "TARGET: " + target;
-            alert("OUT! Roles Swapping...");
-            updateDisplay();
         } else {
-            endGame(!amIBatting);
-        }
-    }
+            score += batting ? myMove : oppMove;
+            document.getElementById("score").innerText = score;
 
-    function endGame(isMeWinner) {
-        alert(isMeWinner ? "YOU WIN! 🏆" : "YOU LOST! 🏏");
-        location.reload();
+            if(second && score>=target){
+                endGame(batting);
+            }
+        }
+
+        setTimeout(()=>{
+            myMove=null;
+            oppMove=null;
+            document.getElementById("me").innerText="❓";
+            document.getElementById("opp").innerText="❓";
+        },1000);
     }
+}
+
+function endGame(win){
+    alert(win ? "You Win 🏆" : "You Lose 😢");
+    location.reload();
+}
 </script>
+
 </body>
 </html>

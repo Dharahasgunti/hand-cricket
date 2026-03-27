@@ -1,99 +1,130 @@
-// Replace your existing script with this
-const ABLY_KEY = "YNYqpA.Qpfktw:WObb_i9bgc_cxO0Kyi3fq8Yts4DvxtOb-8qQXw6ciy4";
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CPL Pro Multiplayer</title>
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <style>
+        body { background: #0b1121; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; padding-top: 50px; }
+        .box { background: #16213e; padding: 30px; border-radius: 15px; display: inline-block; width: 320px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input { width: 85%; padding: 12px; margin: 10px 0; border-radius: 8px; border: none; outline: none; }
+        button { width: 100%; padding: 12px; background: #22a1f0; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .game-btn { width: 60px; height: 60px; margin: 5px; font-size: 20px; display: inline-block; }
+        #game-screen { display: none; }
+        #role { color: #f8b400; font-size: 24px; }
+    </style>
+</head>
+<body>
 
-let ably, channel, myId;
-let players = [];
-let myMove = null, oppMove = null;
-let score = 0, target = 0;
-let batting = false, second = false;
+    <div id="setup" class="box">
+        <h2>🏏 CPL PRO</h2>
+        <input type="text" id="p-name" placeholder="Your Name">
+        <input type="text" id="r-name" placeholder="Room Name (e.g. match1)">
+        <button onclick="joinGame()">START MATCH</button>
+    </div>
 
-async function joinGame() {
-    const room = document.getElementById("r-name").value;
-    const name = document.getElementById("p-name").value; // Added this to capture the name
-    
-    if(!room || !name) return alert("Enter Name and Room");
+    <div id="game-screen" class="box">
+        <h3 id="role">Waiting for Opponent...</h3>
+        <p>Score: <span id="score">0</span> | <span id="target">Target: -</span></p>
+        <div style="font-size: 30px; margin: 20px;">
+            <span id="me">❓</span> vs <span id="opp">❓</span>
+        </div>
+        <div id="controls">
+            <button class="game-btn" onclick="sendMove(1)">1</button>
+            <button class="game-btn" onclick="sendMove(2)">2</button>
+            <button class="game-btn" onclick="sendMove(3)">3</button>
+            <button class="game-btn" onclick="sendMove(4)">4</button>
+            <button class="game-btn" onclick="sendMove(5)">5</button>
+            <button class="game-btn" onclick="sendMove(6)">6</button>
+        </div>
+    </div>
 
-    ably = new Ably.Realtime(ABLY_KEY);
-    myId = Math.random().toString(36).substr(2,5);
-    channel = ably.channels.get(room);
+    <script>
+        const ABLY_KEY = "YNYqpA.hRNCIw:rG6ELr9IlOlCxNMu2mrlC1hIElNyWZ3qSaqkYgcoF1c";
+        let ably, channel, myId;
+        let myMove = null, oppMove = null;
+        let score = 0, target = 0;
+        let batting = false, second = false;
 
-    // Using 'presence' is better for multiplayer discovery
-    channel.presence.subscribe('enter', (member) => {
-        handlePlayerJoin();
-    });
+        async function joinGame() {
+            const room = document.getElementById("r-name").value;
+            const name = document.getElementById("p-name").value;
 
-    await channel.presence.enter({ name: name });
+            if (!room || !name) return alert("Please fill in both fields!");
 
-    channel.subscribe("move", msg => {
-        if(msg.data.id !== myId){
-            oppMove = msg.data.val;
-            check();
+            ably = new Ably.Realtime(ABLY_KEY);
+            myId = Math.random().toString(36).substr(2, 5);
+            channel = ably.channels.get(room);
+
+            // Using Presence: This is the ONLY way to make sure both players are ready
+            channel.presence.subscribe('enter', () => checkConnection());
+            await channel.presence.enter({ name: name });
+
+            channel.subscribe("move", msg => {
+                if (msg.data.id !== myId) {
+                    oppMove = msg.data.val;
+                    runGameLogic();
+                }
+            });
+
+            checkConnection();
         }
-    });
 
-    handlePlayerJoin();
-}
-
-async function handlePlayerJoin() {
-    const members = await channel.presence.get();
-    players = members.map(m => m.connectionId);
-
-    if(players.length >= 2){
-        document.getElementById("setup").style.display = "none";
-        document.getElementById("game-screen").style.display = "block";
-        startGame(members);
-    }
-}
-
-function startGame(members){
-    // First person in the room bats first
-    batting = (members[0].connectionId === ably.connection.id);
-    document.getElementById("role").innerText = batting ? "Batting" : "Bowling";
-}
-
-function sendMove(val){
-    if(myMove !== null) return;
-    myMove = val;
-    document.getElementById("me").innerText = val;
-    channel.publish("move", {val: val, id: myId});
-    check();
-}
-
-function check(){
-    if(myMove !== null && oppMove !== null){
-        document.getElementById("opp").innerText = oppMove;
-
-        if(myMove === oppMove){
-            if(!second){
-                second = true;
-                target = score + 1;
-                score = 0;
-                batting = !batting;
-                document.getElementById("target").innerText = "Target: " + target;
-                document.getElementById("score").innerText = "0";
-                alert("OUT! Second Innings starts.");
-            } else {
-                endGame(!batting);
-            }
-        } else {
-            score += batting ? myMove : oppMove;
-            document.getElementById("score").innerText = score;
-
-            if(second && score >= target){
-                endGame(batting);
+        async function checkConnection() {
+            const members = await channel.presence.get();
+            if (members.length >= 2) {
+                document.getElementById("setup").style.display = "none";
+                document.getElementById("game-screen").style.display = "block";
+                
+                // Set roles: First person to join the room bats first
+                batting = (members[0].connectionId === ably.connection.id);
+                document.getElementById("role").innerText = batting ? "You are Batting" : "You are Bowling";
             }
         }
 
-        setTimeout(() => {
-            myMove = null;
-            oppMove = null;
-            document.getElementById("me").innerText = "❓";
-            document.getElementById("opp").innerText = "❓";
-        }, 1200);
-    }
-}
+        function sendMove(val) {
+            if (myMove !== null) return; 
+            myMove = val;
+            document.getElementById("me").innerText = val;
+            channel.publish("move", { val: val, id: myId });
+            runGameLogic();
+        }
 
-function endGame(win){
-    alert(win ? "You Win 🏆" : "You Lose 😢");
-    location.reload();
-}
+        function runGameLogic() {
+            if (myMove !== null && oppMove !== null) {
+                document.getElementById("opp").innerText = oppMove;
+
+                if (myMove === oppMove) {
+                    if (!second) {
+                        second = true;
+                        target = score + 1;
+                        score = 0;
+                        batting = !batting;
+                        alert("OUT! Innings Break.");
+                        document.getElementById("target").innerText = "Target: " + target;
+                        document.getElementById("score").innerText = "0";
+                        document.getElementById("role").innerText = batting ? "You are Batting" : "You are Bowling";
+                    } else {
+                        gameOver(!batting);
+                    }
+                } else {
+                    let addition = batting ? myMove : oppMove;
+                    score += addition;
+                    document.getElementById("score").innerText = score;
+                    if (second && score >= target) gameOver(batting);
+                }
+
+                setTimeout(() => {
+                    myMove = null; oppMove = null;
+                    document.getElementById("me").innerText = "❓";
+                    document.getElementById("opp").innerText = "❓";
+                }, 1000);
+            }
+        }
+
+        function gameOver(win) {
+            alert(win ? "VICTORY! 🏆" : "DEFEAT! 😢");
+            location.reload();
+        }
+    </script>
+</body>
+</html>

@@ -1,92 +1,148 @@
-const ABLY_KEY = "YNYqpA.Qpfktw:WObb_i9bgc_cxO0Kyi3fq8Yts4DvxtOb-8qQXw6ciy4";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPL Pro Multiplayer</title>
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <style>
+        body { background: #0b1121; color: white; font-family: sans-serif; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .box { background: #16213e; padding: 30px; border-radius: 15px; width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        input { width: 90%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #1f4068; background: #0f3460; color: white; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 5px; background: #22a1f0; color: white; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #1a85cc; }
+        .game-btn { width: 60px; height: 60px; margin: 5px; font-size: 20px; }
+        #game-screen { display: none; }
+        .score-board { display: flex; justify-content: space-around; margin: 20px 0; font-size: 1.2rem; }
+        .move-display { font-size: 2rem; margin: 10px; }
+    </style>
+</head>
+<body>
 
-let ably, channel, myId;
-let players = [];
-let myMove=null, oppMove=null;
-let score=0, target=0;
-let batting=false, second=false;
+    <div id="setup" class="box">
+        <h2 style="color: #22a1f0;">MULTIPLAYER SETUP</h2>
+        <input type="text" id="p-name" placeholder="Your Name">
+        <input type="text" id="r-name" placeholder="Room Name (e.g. cricket)">
+        <button onclick="joinGame()">START MATCH</button>
+    </div>
 
-function joinGame() {
-    const room = document.getElementById("r-name").value;
-    if(!room) return alert("Enter room");
+    <div id="game-screen" class="box">
+        <h3 id="role">Waiting for opponent...</h3>
+        <div class="score-board">
+            <div>Score: <span id="score">0</span></div>
+            <div id="target">Target: -</div>
+        </div>
+        
+        <div class="move-display">
+            <span id="me">❓</span> vs <span id="opp">❓</span>
+        </div>
 
-    ably = new Ably.Realtime(ABLY_KEY);
-    myId = Math.random().toString(36).substr(2,5);
-    channel = ably.channels.get(room);
+        <div id="controls">
+            <button class="game-btn" onclick="sendMove(1)">1</button>
+            <button class="game-btn" onclick="sendMove(2)">2</button>
+            <button class="game-btn" onclick="sendMove(3)">3</button>
+            <button class="game-btn" onclick="sendMove(4)">4</button>
+            <button class="game-btn" onclick="sendMove(5)">5</button>
+            <button class="game-btn" onclick="sendMove(6)">6</button>
+        </div>
+    </div>
 
-    channel.subscribe(msg => {
-        const data = msg.data;
+    <script>
+        const ABLY_KEY = "YNYqpA.Qpfktw:WObb_i9bgc_cxO0Kyi3fq8Yts4DvxtOb-8qQXw6ciy4";
+        let ably, channel, myId;
+        let players = [];
+        let myMove = null, oppMove = null;
+        let score = 0, target = 0;
+        let batting = false, second = false;
 
-        if(data.type==="join"){
-            if(!players.includes(data.id)){
-                players.push(data.id);
-            }
+        async function joinGame() {
+            const room = document.getElementById("r-name").value;
+            const name = document.getElementById("p-name").value;
+            if (!room || !name) return alert("Enter Name and Room");
 
-            if(players.length===2){
-                startGame();
+            ably = new Ably.Realtime(ABLY_KEY);
+            myId = Math.random().toString(36).substr(2, 5);
+            channel = ably.channels.get(room);
+
+            // Using Presence to see who is in the room
+            channel.presence.subscribe('enter', (member) => updatePlayerList());
+            channel.presence.subscribe('leave', (member) => updatePlayerList());
+            
+            await channel.presence.enter({ name: name });
+
+            // Listen for moves
+            channel.subscribe("move", msg => {
+                if (msg.data.id !== myId) {
+                    oppMove = msg.data.val;
+                    check();
+                }
+            });
+
+            updatePlayerList();
+        }
+
+        async function updatePlayerList() {
+            const members = await channel.presence.get();
+            players = members.map(m => m.clientId || m.connectionId);
+            
+            if (players.length >= 2) {
+                document.getElementById("setup").style.display = "none";
+                document.getElementById("game-screen").style.display = "block";
+                
+                // Determine roles: first one in is batting
+                batting = (members[0].connectionId === ably.connection.id);
+                document.getElementById("role").innerText = batting ? "You are Batting" : "You are Bowling";
             }
         }
 
-        if(data.type==="move" && data.id!==myId){
-            oppMove = data.val;
+        function sendMove(val) {
+            if (myMove !== null) return;
+            myMove = val;
+            document.getElementById("me").innerText = val;
+            channel.publish("move", { val: val, id: myId });
             check();
         }
-    });
 
-    channel.publish({type:"join", id:myId});
-    document.getElementById("setup").style.display="none";
-}
+        function check() {
+            if (myMove !== null && oppMove !== null) {
+                document.getElementById("opp").innerText = oppMove;
 
-function startGame(){
-    batting = (players[0] === myId);
-    document.getElementById("role").innerText = batting ? "Batting" : "Bowling";
-}
+                if (myMove === oppMove) {
+                    if (!second) {
+                        second = true;
+                        target = score + 1;
+                        score = 0;
+                        batting = !batting;
+                        document.getElementById("target").innerText = "Target: " + target;
+                        document.getElementById("score").innerText = "0";
+                        document.getElementById("role").innerText = batting ? "Batting" : "Bowling";
+                        alert("OUT! Roles Swapped.");
+                    } else {
+                        endGame(!batting);
+                    }
+                } else {
+                    let runs = batting ? myMove : oppMove;
+                    score += runs;
+                    document.getElementById("score").innerText = score;
 
-function sendMove(val){
-    if(myMove!==null) return;
+                    if (second && score >= target) {
+                        endGame(batting);
+                    }
+                }
 
-    myMove = val;
-    document.getElementById("me").innerText = val;
-
-    channel.publish({type:"move", val:val, id:myId});
-    check();
-}
-
-function check(){
-    if(myMove!==null && oppMove!==null){
-
-        document.getElementById("opp").innerText = oppMove;
-
-        if(myMove===oppMove){
-            if(!second){
-                second=true;
-                target = score+1;
-                score=0;
-                batting=!batting;
-                document.getElementById("target").innerText="Target: "+target;
-                alert("OUT!");
-            } else {
-                endGame(!batting);
-            }
-        } else {
-            score += batting ? myMove : oppMove;
-            document.getElementById("score").innerText = score;
-
-            if(second && score>=target){
-                endGame(batting);
+                setTimeout(() => {
+                    myMove = null;
+                    oppMove = null;
+                    document.getElementById("me").innerText = "❓";
+                    document.getElementById("opp").innerText = "❓";
+                }, 1200);
             }
         }
 
-        setTimeout(()=>{
-            myMove=null;
-            oppMove=null;
-            document.getElementById("me").innerText="❓";
-            document.getElementById("opp").innerText="❓";
-        },1000);
-    }
-}
-
-function endGame(win){
-    alert(win ? "You Win 🏆" : "You Lose 😢");
-    location.reload();
-}
+        function endGame(win) {
+            alert(win ? "You Win 🏆" : "You Lose 😢");
+            location.reload();
+        }
+    </script>
+</body>
+</html>

@@ -1,77 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hand Cricket Multiplayer</title>
-<script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
-
-<style>
-:root { --bg:#0f172a; --card:#1e293b; --accent:#38bdf8; --text:#f8fafc;}
-body { background:var(--bg); color:var(--text); font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh;}
-.game-card { width:90%; max-width:400px; background:var(--card); padding:20px; border-radius:20px; text-align:center;}
-.score { font-size:3rem; color:var(--accent);}
-.grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
-.num-btn { padding:15px; font-size:1.2rem; border:none; border-radius:10px; background:var(--accent);}
-.setup-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg); display:flex; flex-direction:column; justify-content:center; align-items:center;}
-input { padding:10px; margin:5px;}
-</style>
-</head>
-
-<body>
-
-<div id="setup" class="setup-overlay">
-<h2>Join Game</h2>
-<input id="p-name" placeholder="Your Name">
-<input id="r-name" placeholder="Room Name">
-<button onclick="joinGame()">Start</button>
-</div>
-
-<div class="game-card">
-<div id="role">Connecting...</div>
-<div class="score" id="score">0</div>
-<div id="target"></div>
-
-<div>
-<span id="me">❓</span> vs <span id="opp">❓</span>
-</div>
-
-<div class="grid">
-<button onclick="sendMove(1)">1</button>
-<button onclick="sendMove(2)">2</button>
-<button onclick="sendMove(3)">3</button>
-<button onclick="sendMove(4)">4</button>
-<button onclick="sendMove(5)">5</button>
-<button onclick="sendMove(6)">6</button>
-</div>
-
-</div>
-
-<script>
 const ABLY_KEY = "YNYqpA.Qpfktw:WObb_i9bgc_cxO0Kyi3fq8Yts4DvxtOb-8qQXw6ciy4";
 
 let ably, channel, myId;
+let players = [];
 let myMove=null, oppMove=null;
 let score=0, target=0;
 let batting=false, second=false;
 
 function joinGame() {
-    const name = document.getElementById("p-name").value || "Player";
     const room = document.getElementById("r-name").value;
-
     if(!room) return alert("Enter room");
 
     ably = new Ably.Realtime(ABLY_KEY);
     myId = Math.random().toString(36).substr(2,5);
     channel = ably.channels.get(room);
 
-    channel.subscribe("msg", msg => {
+    channel.subscribe(msg => {
         const data = msg.data;
 
-        if(data.type==="join" && data.id!==myId){
-            batting = myId < data.id;
-            updateRole();
-            channel.publish("msg",{type:"ack", id:myId});
+        if(data.type==="join"){
+            if(!players.includes(data.id)){
+                players.push(data.id);
+            }
+
+            if(players.length===2){
+                startGame();
+            }
         }
 
         if(data.type==="move" && data.id!==myId){
@@ -80,12 +33,12 @@ function joinGame() {
         }
     });
 
-    channel.publish("msg",{type:"join", id:myId});
-
+    channel.publish({type:"join", id:myId});
     document.getElementById("setup").style.display="none";
 }
 
-function updateRole(){
+function startGame(){
+    batting = (players[0] === myId);
     document.getElementById("role").innerText = batting ? "Batting" : "Bowling";
 }
 
@@ -95,7 +48,7 @@ function sendMove(val){
     myMove = val;
     document.getElementById("me").innerText = val;
 
-    channel.publish("msg",{type:"move", val:val, id:myId});
+    channel.publish({type:"move", val:val, id:myId});
     check();
 }
 
@@ -109,10 +62,9 @@ function check(){
                 second=true;
                 target = score+1;
                 score=0;
-                batting = !batting;
+                batting=!batting;
                 document.getElementById("target").innerText="Target: "+target;
-                updateRole();
-                alert("OUT! Switch innings");
+                alert("OUT!");
             } else {
                 endGame(!batting);
             }
@@ -138,7 +90,3 @@ function endGame(win){
     alert(win ? "You Win 🏆" : "You Lose 😢");
     location.reload();
 }
-</script>
-
-</body>
-</html>
